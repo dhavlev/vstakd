@@ -31,12 +31,21 @@ EoF
 
 eksctl create cluster -f  ~/eks.yaml
 
+## helm setup
+cd && curl https://storage.googleapis.com/kubernetes-helm/helm-v2.11.0-linux-amd64.tar.gz -o helm-v2.11.0-linux-amd64.tar.gz
+tar -zxvf helm-v2.11.0-linux-amd64.tar.gz
+sudo mv linux-amd64/helm /usr/local/bin/helm
+kubectl create serviceaccount --namespace kube-system tiller
+kubectl create clusterrolebinding tiller-cluster-rule --clusterrole=cluster-admin --serviceaccount=kube-system:tiller
+helm init --service-account tiller
+sleep 10s
+
 cd ~/istio-1.1.7 && helm install install/kubernetes/helm/istio-init --name istio-init --namespace istio-system
 sleep 10s
 kubectl get crds | grep 'istio.io\|certmanager.k8s.io' | wc -l
-helm install install/kubernetes/helm/istio --name istio --namespace istio-system --values install/kubernetes/helm/istio/values-istio-demo.yaml
-kubectl label namespace default istio-injection=enabled
-kubectl get namespace -L istio-injection
+helm install install/kubernetes/helm/istio --name istio --namespace istio-system --values install/kubernetes/helm/istio/values-istio-demo.yaml --set tracing.enabled=true --set tracing.provider=zipkin
+#kubectl label namespace default istio-injection=enabled
+#kubectl get namespace -L istio-injection
 
 
 #### Installing Ingress
@@ -50,9 +59,9 @@ controller:
       service.beta.kubernetes.io/aws-load-balancer-proxy-protocol: '*'
 EOF
 
-helm install --name ingress --namespace ingress -f ingressValues.yaml stable/nginx-ingress
+helm install --name ingress --namespace ingress -f ~/ingressValues.yaml stable/nginx-ingress
 
-
+sleep 30s
 #### Jenkins Setup
 cat <<EoF> ~/jenkinValues.yaml
 
@@ -78,50 +87,50 @@ master:
     #   hosts:
     #     - jenkins.cluster.local
   installPlugins:
-    - workflow-api:2.33
-    - kubernetes:1.14.9
+    - workflow-api:2.35
+    - kubernetes:1.16.0
     - workflow-job:2.32
     - workflow-aggregator:2.6
-    - credentials-binding:1.18
-    - git:3.9.3
+    - credentials-binding:1.19
+    - git:3.10.0
     - blueocean:1.14.0
     - dashboard-view:2.10
-    - build-name-setter:1.7.1
+    - build-name-setter:2.0.1
     - config-file-provider:3.6
     - embeddable-build-status:2.0.1
-    - rebuild:1.30
+    - rebuild:1.31
     - ssh-agent:1.17
     - throttle-concurrents:2.0.1
-    - nodejs:1.2.9
+    - nodejs:1.3.2
     - checkstyle:4.0.0
-    - cobertura:1.13
+    - cobertura:1.14
     - htmlpublisher:1.18
-    - junit:1.27
-    - warnings-ng:4.0.0
-    - xunit:2.3.3
+    - junit:1.28
+    - warnings-ng:5.1.0
+    - xunit:2.3.5
     - build-pipeline-plugin:1.5.8
     - conditional-buildstep:1.3.6
     - jenkins-multijob-plugin:1.32
     - parameterized-trigger:2.35.2
-    - copyartifact:1.42
-    - git-parameter:0.9.10
+    - copyartifact:1.42.1
+    - git-parameter:0.9.11
     - github:1.29.4
     - matrix-project:1.14
-    - role-strategy:2.10
-    - active-directory:2.13
+    - role-strategy:2.11
+    - active-directory:2.16
     - emailext-template:1.1
     - publish-over-ssh:1.20.1
     - ssh:2.6.1
     - periodicbackup:1.5
     - thinBackup:1.9
-    - jobConfigHistory:2.20
+    - jobConfigHistory:2.22
     - simple-theme-plugin:0.5.1
     - cucumber-testresult-plugin:0.10.1
     - jacoco:3.0.4
     - nodelabelparameter:1.7.2
     - jenkinswalldisplay:0.6.34
     - golang:1.2
-    - audit-trail:2.4
+    - audit-trail:2.5
     - saferestart:0.3
     - pipeline-utility-steps:2.3.0
 EoF
@@ -143,7 +152,7 @@ metadata:
   namespace: istio-system
 spec:
   rules:
-  - host: a40e469bc910911e992f2023646f1c56-1142892619.us-east-1.elb.amazonaws.com
+  - host: #ingresshostname
     http:
       paths:
       - backend:
@@ -151,7 +160,8 @@ spec:
           servicePort: 20001
         path: /kiali
 EOF
-
+export ingresshostname=$(echo $(kubectl get svc ingress-nginx-ingress-controller -n ingress -o jsonpath='{ .status.loadBalancer.ingress[0].hostname }'))
+sed -i "s/#ingresshostname/$ingresshostname/g" ~/kiali-ingress.yaml
 kubectl create -f ~/kiali-ingress.yaml
 
 #### Install Jaeger Ingress
@@ -167,7 +177,7 @@ metadata:
   namespace: istio-system
 spec:
   rules:
-  - host: a40e469bc910911e992f2023646f1c56-1142892619.us-east-1.elb.amazonaws.com
+  - host: #ingresshostname
     http:
       paths:
       - backend:
@@ -176,9 +186,32 @@ spec:
         path: /jaeger
 EOF
 
+export ingresshostname=$(echo $(kubectl get svc ingress-nginx-ingress-controller -n ingress -o jsonpath='{ .status.loadBalancer.ingress[0].hostname }'))
+sed -i "s/#ingresshostname/$ingresshostname/g" ~/jaeger-ingress.yaml
 kubectl create -f ~/jaeger-ingress.yaml
 
 #### Install Zipkin Ingress
 cat > ~/zipkin-ingress.yaml <<EOF
-
+apiVersion: extensions/v1beta1
+kind: Ingress
+metadata:
+  annotations:
+    kubernetes.io/ingress.class: nginx
+  labels:
+    app: zipkin
+  name: zipkin
+  namespace: istio-system
+spec:
+  rules:
+  - host: #ingresshostname
+    http:
+      paths:
+      - backend:
+          serviceName: zipkin
+          servicePort: 9411
+        path: /zipkin
 EOF
+
+export ingresshostname=$(echo $(kubectl get svc ingress-nginx-ingress-controller -n ingress -o jsonpath='{ .status.loadBalancer.ingress[0].hostname }'))
+sed -i "s/#ingresshostname/$ingresshostname/g" ~/zipkin-ingress.yaml
+kubectl create -f ~/zipkin-ingress.yaml

@@ -26,14 +26,6 @@ cd istio-1.1.7
 echo 'export PATH=$PWD/bin:$PATH' >> ~/.bashrc
 cd
 
-## helm setup
-curl https://storage.googleapis.com/kubernetes-helm/helm-v2.11.0-linux-amd64.tar.gz -o helm-v2.11.0-linux-amd64.tar.gz
-tar -zxvf helm-v2.11.0-linux-amd64.tar.gz
-sudo mv linux-amd64/helm /usr/local/bin/helm
-kubectl create serviceaccount --namespace kube-system tiller
-kubectl create clusterrolebinding tiller-cluster-rule --clusterrole=cluster-admin --serviceaccount=kube-system:tiller
-helm init --service-account tiller
-
 ## aws cli setup
 sudo apt -y install python-pip && sudo pip install --upgrade pip && sudo pip install awscli --upgrade
 
