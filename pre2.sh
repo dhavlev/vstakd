@@ -38,15 +38,16 @@ sudo mv linux-amd64/helm /usr/local/bin/helm
 kubectl create serviceaccount --namespace kube-system tiller
 kubectl create clusterrolebinding tiller-cluster-rule --clusterrole=cluster-admin --serviceaccount=kube-system:tiller
 helm init --service-account tiller
-sleep 10s
+sleep 60s
 
+#### Istio Setup
 cd ~/istio-1.1.7 && helm install install/kubernetes/helm/istio-init --name istio-init --namespace istio-system
-sleep 10s
+sleep 60s
 kubectl get crds | grep 'istio.io\|certmanager.k8s.io' | wc -l
 helm install install/kubernetes/helm/istio --name istio --namespace istio-system --values install/kubernetes/helm/istio/values-istio-demo.yaml --set tracing.enabled=true --set tracing.provider=zipkin
 #kubectl label namespace default istio-injection=enabled
 #kubectl get namespace -L istio-injection
-
+sleep 60s
 
 #### Installing Ingress
 cat > ~/ingressValues.yaml <<EOF
@@ -215,3 +216,67 @@ EOF
 export ingresshostname=$(echo $(kubectl get svc ingress-nginx-ingress-controller -n ingress -o jsonpath='{ .status.loadBalancer.ingress[0].hostname }'))
 sed -i "s/#ingresshostname/$ingresshostname/g" ~/zipkin-ingress.yaml
 kubectl create -f ~/zipkin-ingress.yaml
+
+#### Create Secrets
+# Amend values for docker 'docker-config-secret' and uncomment below line
+#kubectl create secret docker-registry docker-config-secret --docker-server=https://index.docker.io/v1/ --docker-username=your-username --docker-password=your-password --docker-email=my-email@provider.com --namespace tooling
+kubectl create secret generic kube-secret --from-file=config=.kube/config --namespace tooling
+kubectl create secret generic aws-secret --from-file=config=.aws/config --from-file=credentials=.aws/credentials --namespace tooling
+
+### Install Gateway and Virtual service
+cat > ~/istio-ingress.yaml <<EOF
+apiVersion: networking.istio.io/v1alpha3
+kind: Gateway
+metadata:
+  name: voting-app-gw
+spec:
+  selector:
+    istio: ingressgateway # use istio default controller
+  servers:
+  - port:
+      number: 80
+      name: http
+      protocol: HTTP
+    hosts:
+    - "*"
+---
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: voting-app-vs
+spec:
+  hosts:
+  - "*"
+  gateways:
+  - voting-app-gw
+  http:
+  - match:
+    - uri:
+        prefix: /vote
+    route:
+    - destination:
+        host: vote.voting-app-vote.svc.cluster.local
+        port:
+          number: 5000
+  - match:
+    - uri:
+        prefix: /
+    route:
+    - destination:
+        host: result.voting-app-result.svc.cluster.local
+        port:
+          number: 5001
+EOF
+
+kubectl create -f ~/istio-ingress.yaml -n istio-system
+
+### View Nginx Ingress URL
+kubectl get svc -n ingress
+
+### View Istio Ingress URL
+kubectl get svc -n ingress
+echo $(kubectl get svc istio-ingressgateway -n istio-system -o jsonpath='{ .status.loadBalancer.ingress[0].hostname }')
+
+
+### Get Jenkins Password
+printf $(kubectl get secret --namespace tooling my-jenkins -o jsonpath="{.data.jenkins-admin-password}" | base64 --decode);echo
