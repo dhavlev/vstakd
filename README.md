@@ -8,6 +8,9 @@ This is my personal project where I am trying to setup Jenkins Pipeline for web 
 ![Architecture diagram](images/architecture.png)
 
 ### Components - tools
+
+![vstakd](images/vstakd.png)
+
 1. Cloud - AWS, AWSCLI, AWS IAM Authentication
 2. Kubernetes Cluster - kubectl, eksctl, istio
 3. Orchestration/CI-CD - Jenkins
@@ -72,7 +75,7 @@ chmod 777 pre2.sh
 ### Screenshots
 1. Configuring 1st pipeline [image](images/jenkins-create-pipeline.PNG)
 2. Viewing Jenkins pipelines [image](images/jenkins-3.PNG)
-3. Configuring Global Shared Library [image](images/jenkins-3.PNG)
+3. Configuring Global Shared Library [image](images/jenkins-shared-library-configuration.PNG)
 4. Viewing installed applications [image](images/voting-app.PNG)
 5. Observe your Istio service mesh using Kiali [image](images/kiali.PNG)
 6. Viewing tracing using Zipkin [image](images/zipkin.PNG)
@@ -108,4 +111,5 @@ printf $(kubectl get secret --namespace tooling my-jenkins -o jsonpath="{.data.j
 ```
 
 ### Troubleshooting
-1. Unable to schedule jenkins slave - Make sure k8s secrets are in place for both docker and kube config
+1. Unable to schedule jenkins slave  
+   Make sure k8s secrets are in place for both docker and kube config
